@@ -33,6 +33,9 @@ def skillsName = findProperty("SKILLS_NAME") ?: ".github/skills"
 // gradle/skills-sync.gradle
 
 def isCi = System.getenv("CI") == "true"
+println "Skill Sync Gradle Script Loaded"
+println "CI value from environment: ${System.getenv("CI")}"
+println "Skill sync enabled: ${!isCi}"
 def skillsTargetDir = project.findProperty("SKILLS_NAME") ?: ".github/skills"
 def filterBySkills = project.findProperty("FILTER_BY_SKILLS") ?: ""
 
@@ -134,7 +137,13 @@ tasks.register("deleteSkillRepoTemp", Delete) {
 
 tasks.register("syncCommonSkills") {
     dependsOn("deleteSkillRepoTemp")
-    onlyIf { !isCi }
+    onlyIf {
+        if (isCi) {
+            println "Skipping ${name} because CI=true"
+            return false
+        }
+        return true
+    }
 
     doLast {
         println "Common skills sync completed."
