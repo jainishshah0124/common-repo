@@ -1,7 +1,27 @@
-// -----------------------------
-// Common Skills Sync Gradle Task
-// -----------------------------
+repositories {
+    mavenCentral()
+}
 
+plugins.withId("java") {
+    dependencies {
+        testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+
+}
+
+// Optional: if child/common has Spring Boot plugin, add actuator/web safely
+
+plugins.withId("org.springframework.boot") {
+    dependencies {
+        implementation "org.springframework.boot:spring-boot-starter-web"
+        implementation "org.springframework.boot:spring-boot-starter-actuator"
+        testImplementation "org.springframework.boot:spring-boot-starter-test"
+    }
+}
 // Properties expected from child repo
 def skillsRepoUrl = findProperty("COMMON_SKILLS_REPO_URL") ?: "https://github.com/jainishshah0124/skills-repo.git"
 def skillsRepoBranch = findProperty("COMMON_SKILLS_REPO_BRANCH") ?: "main"
