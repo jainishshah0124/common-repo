@@ -1,0 +1,122 @@
+// -----------------------------
+// Common Skills Sync Gradle Task
+// -----------------------------
+
+// Properties expected from child repo
+def skillsRepoUrl = findProperty("COMMON_SKILLS_REPO_URL") ?: "https://github.com/jainishshah0124/skills-repo.git"
+def skillsRepoBranch = findProperty("COMMON_SKILLS_REPO_BRANCH") ?: "main"
+def skillsRepoSubDir = findProperty("COMMON_SKILLS_REPO_SUBDIR") ?: ""
+
+// Example: github-skills
+def skillsName = findProperty("SKILLS_NAME") ?: ".github/skills"
+
+// gradle/skills-sync.gradle
+
+def isCi = System.getenv("CI") == "true"
+def skillsTargetDir = project.findProperty("SKILLS_NAME") ?: ".github/skills"
+def filterBySkills = project.findProperty("FILTER_BY_SKILLS") ?: ""
+
+def tempRepoDir = file("${buildDir}/tmp/skills-repo")
+def targetSkillDir = file("${rootDir}/${skillsTargetDir}")
+def sourceSkillDir = skillsRepoSubDir
+        ? file("${tempRepoDir}/${skillsRepoSubDir}")
+        : tempRepoDir
+
+tasks.register("cleanSkillRepoTemp", Delete) {
+    onlyIf { !isCi }
+    delete tempRepoDir
+}
+
+tasks.register("cloneSkillRepo", Exec) {
+    dependsOn("cleanSkillRepoTemp")
+    onlyIf { !isCi }
+
+    doFirst {
+        if (!skillsRepoUrl) {
+            throw new GradleException("COMMON_SKILLS_REPO_URL is required")
+        }
+
+        println "Cloning skills repo..."
+        println "Repo   : ${skillsRepoUrl}"
+        println "Branch : ${skillsRepoBranch}"
+        println "Temp   : ${tempRepoDir.absolutePath}"
+
+        tempRepoDir.parentFile.mkdirs()
+    }
+
+    commandLine "git", "clone",
+            "--depth", "1",
+            "--branch", skillsRepoBranch,
+            skillsRepoUrl,
+            tempRepoDir.absolutePath
+}
+
+tasks.register("copySkillMdFromRepo", Copy) {
+    dependsOn("cloneSkillRepo")
+    onlyIf { !isCi }
+
+    doFirst {
+        if (!sourceSkillDir.exists()) {
+            throw new GradleException("Source skill folder not found: ${sourceSkillDir.absolutePath}")
+        }
+
+        println "Copying skills..."
+        println "From : ${sourceSkillDir.absolutePath}"
+        println "To   : ${targetSkillDir.absolutePath}"
+
+        targetSkillDir.mkdirs()
+    }
+
+    from(sourceSkillDir)
+    into(targetSkillDir)
+    exclude ".git/**"
+}
+
+tasks.register("filterSkillMd") {
+    dependsOn("copySkillMdFromRepo")
+    onlyIf { !isCi }
+
+    doLast {
+        def filters = filterBySkills
+                .split(",")
+                .collect { it.trim() }
+                .findAll { it }
+
+        if (filters.isEmpty()) {
+            println "No filters provided."
+            return
+        }
+
+        filters.each { skillPath ->
+            def normalizedPath = skillPath.replace("\\", "/").replaceAll("^/+", "")
+            def fileToDelete = new File(targetSkillDir, normalizedPath)
+
+            if (fileToDelete.exists()) {
+                delete(fileToDelete)
+                println "Deleted filtered skill: ${fileToDelete.absolutePath}"
+            } else {
+                println "Filter file not found, skipping: ${fileToDelete.absolutePath}"
+            }
+        }
+    }
+}
+
+tasks.register("deleteSkillRepoTemp", Delete) {
+    dependsOn("filterSkillMd")
+    onlyIf { !isCi }
+
+    delete tempRepoDir
+
+    doLast {
+        println "Deleted temp repo: ${tempRepoDir.absolutePath}"
+    }
+}
+
+tasks.register("syncCommonSkills") {
+    dependsOn("deleteSkillRepoTemp")
+    onlyIf { !isCi }
+
+    doLast {
+        println "Common skills sync completed."
+    }
+}

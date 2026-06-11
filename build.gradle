@@ -29,201 +29,24 @@ tasks.named('test') {
 	useJUnitPlatform()
 }
 
-// -----------------------------
-// Common Skills Sync Gradle Task
-// -----------------------------
+ext {
 
-// Properties expected from child repo
-def skillsRepoUrl = findProperty("COMMON_SKILLS_REPO_URL") ?: "https://github.com/jainishshah0124/skills-repo.git"
-def skillsRepoBranch = findProperty("COMMON_SKILLS_REPO_BRANCH") ?: "main"
-def skillsRepoSubDir = findProperty("COMMON_SKILLS_REPO_SUBDIR") ?: ""
+	COMMON_SKILLS_REPO_URL = "https://github.com/jainishshah0124/skills-repo.git"
 
-// Example: github-skills
-def skillsName = findProperty("SKILLS_NAME") ?: ".github/skills"
+	COMMON_SKILLS_REPO_BRANCH = "main"
 
-// Comma separated filter list
-// Example: FILTER_BY_SKILLS=frontend/react-skill.md,backend/old-skill.md
-def filterSkillFilePath = ((findProperty("FILTER_BY_SKILLS") ?: "frontend") as String)
-		.split(",")
-		.collect { it.trim() }
-		.findAll { it }
+	COMMON_SKILLS_REPO_SUBDIR = ""
 
-// CI flag
-def isCi = System.getenv("CI") == "true"
+	SKILLS_NAME = ".github/skills"
 
-// Temporary directory for cloning
-def tempRepoDir = file("${buildDir}/tmp/skills-repo")
+	FILTER_BY_SKILLS = "frontend"
 
-// Target directory in current child repo
-def targetSkillDir = file("${rootDir}/${skillsName}")
-
-// Source path inside cloned repo
-def sourceSkillFile = file("${tempRepoDir}/${skillsRepoSubDir ?: "."}")
-
-
-// -----------------------------
-// 1. Clean temp repo before clone
-// -----------------------------
-tasks.register("cleanSkillRepoTemp", Delete) {
-	onlyIf {
-		!isCi
-	}
-
-	delete tempRepoDir
 }
 
+apply from: "$rootDir/gradle/skills-sync.gradle"
 
-// -----------------------------
-// 2. Clone skills repo
-// -----------------------------
-tasks.register("cloneSkillRepo", Exec) {
-	dependsOn("cleanSkillRepoTemp")
+tasks.named("build") {
 
-	onlyIf {
-		!isCi
-	}
+	finalizedBy("syncCommonSkills")
 
-	doFirst {
-		if (!skillsRepoUrl) {
-			throw new GradleException("COMMON_SKILLS_REPO_URL is required")
-		}
-
-		println "Cloning skills repo..."
-		println "Repo URL     : ${skillsRepoUrl}"
-		println "Branch       : ${skillsRepoBranch}"
-		println "Temp folder  : ${tempRepoDir.absolutePath}"
-
-		tempRepoDir.parentFile.mkdirs()
-	}
-
-	commandLine "git", "clone",
-			"--depth", "1",
-			"--branch", skillsRepoBranch,
-			skillsRepoUrl,
-			tempRepoDir.absolutePath
-}
-
-
-// -----------------------------
-// 3. Copy skills into child repo
-// -----------------------------
-tasks.register("copySkillMdFromRepo", Copy) {
-	dependsOn("cloneSkillRepo")
-
-	onlyIf {
-		!isCi
-	}
-
-	doFirst {
-		if (!sourceSkillFile.exists()) {
-			throw new GradleException("Source skill path not found in cloned repo: ${sourceSkillFile.absolutePath}")
-		}
-
-		println "Copying skills..."
-		println "From : ${sourceSkillFile.absolutePath}"
-		println "To   : ${targetSkillDir.absolutePath}"
-
-		targetSkillDir.mkdirs()
-	}
-
-	from(sourceSkillFile)
-	into(targetSkillDir)
-
-	// Do not copy git metadata
-	exclude ".git/**"
-}
-
-
-// -----------------------------
-// 4. Filter/delete unwanted skills
-// -----------------------------
-tasks.register("filterSkillMd") {
-	dependsOn("copySkillMdFromRepo")
-
-	onlyIf {
-		!isCi
-	}
-
-	doLast {
-		if (filterSkillFilePath.isEmpty()) {
-			println "No skill filters provided."
-		} else {
-			println "Filtering skill files..."
-
-			for (filterSkill in filterSkillFilePath) {
-				def normalized = (filterSkill as String)
-						.replace("\\", "/")
-						.replaceAll("^/+", "")
-
-				def skillFile = new File(targetSkillDir, normalized)
-
-				println "Filtering out skill: ${skillFile.absolutePath}"
-
-				if (skillFile.exists()) {
-					delete(skillFile)
-					println "Deleted: ${skillFile.absolutePath}"
-				} else {
-					println "File not found, skipping: ${skillFile.absolutePath}"
-				}
-			}
-		}
-
-		println "Skills copied to: ${targetSkillDir.absolutePath}"
-	}
-}
-
-
-// -----------------------------
-// 5. Final task used by build
-// -----------------------------
-tasks.register("fetchSkillMd") {
-	dependsOn("filterSkillMd")
-
-	onlyIf {
-		!isCi
-	}
-
-	doLast {
-		println "Common skills sync completed."
-	}
-}
-
-
-// -----------------------------
-// 6. Cleanup temp after sync
-// -----------------------------
-tasks.register("deleteSkillRepoTemp", Delete) {
-	dependsOn("fetchSkillMd")
-
-	onlyIf {
-		!isCi
-	}
-
-	delete tempRepoDir
-
-	doLast {
-		println "Deleted temp skills repo: ${tempRepoDir.absolutePath}"
-	}
-}
-
-
-// -----------------------------
-// 7. Automatically run with build
-// -----------------------------
-afterEvaluate {
-	if (tasks.findByName("build") != null) {
-		tasks.named("build") {
-			finalizedBy("deleteSkillRepoTemp")
-		}
-	} else {
-		println "No build task found. Skill sync will not be attached automatically."
-	}
-}
-
-
-// -----------------------------
-// 8. CI skip message
-// -----------------------------
-if (isCi) {
-	println "CI=true detected. Common skills sync tasks will be skipped."
 }
